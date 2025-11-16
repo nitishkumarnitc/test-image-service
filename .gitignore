@@ -1,0 +1,82 @@
+###############################
+# Python
+###############################
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+###############################
+# Editor & OS files
+###############################
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+###############################
+# Local development tools
+###############################
+# LocalStack data
+localstack_data/
+localstack*
+*.tfstate
+*.tfstate.backup
+
+# AWS SAM / CDK / Serverless
+.aws-sam/
+.cdk.out/
+.serverless/
+
+# Terraform
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+*.tfvars.json
+
+###############################
+# Docker
+###############################
+docker-compose.override.yml
+*.tar
+*.img
+
+###############################
+# Build / dist artifacts
+###############################
+build/
+dist/
+*.zip
+*.gz
+
+###############################
+# Test artifacts
+###############################
+.pytest_cache/
+.coverage
+htmlcov/
+cov.xml
+
+###############################
+# Project-specific exclusions
+###############################
+# compiled images or sample uploads
+uploads/
+tmp/
+scratch/

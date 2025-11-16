@@ -1,0 +1,12 @@
+# Lambda container image (for AWS Lambda or LocalStack Lambda support)
+FROM public.ecr.aws/lambda/python:3.10
+
+# Install dependencies into the Lambda task root
+COPY requirements.txt .
+RUN pip install -r requirements.txt -t "${LAMBDA_TASK_ROOT}"
+
+# Copy source
+COPY src/ ${LAMBDA_TASK_ROOT}/src/
+
+# Default handler — you can override this in Lambda configuration.
+CMD ["src.handler.request_upload"]
