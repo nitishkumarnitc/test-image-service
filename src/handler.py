@@ -1,102 +1,191 @@
+# src/handler.py
 import json
 import os
 import uuid
 import logging
 from datetime import datetime, timezone
-import boto3
+from decimal import Decimal
+from typing import Any
 
 from .models import CreateUploadRequest
 from .storage import (
     generate_presigned_put,
+    generate_presigned_get,
     head_object,
     create_metadata,
     delete_object,
     get_item,
-    table,
+    scan_items,
 )
-from .config import S3_BUCKET, MAX_UPLOAD_SIZE, PRESIGNED_GET_EXPIRES
+from .config import MAX_UPLOAD_SIZE
 
-logger = logging.getLogger("image_service")
+logger = logging.getLogger("image-handler")
 logger.setLevel(logging.INFO)
 
-def _response(status, body):
-    return {"statusCode": status, "body": json.dumps(body)}
 
+def _decimal_to_native(obj: Any) -> Any:
+    """
+    Recursively convert Decimal -> int/float (so json.dumps works).
+    """
+    if isinstance(obj, Decimal):
+        # If it's an integer value, return int else float
+        if obj == obj.to_integral_value():
+            return int(obj)
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _decimal_to_native(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decimal_to_native(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_decimal_to_native(v) for v in obj)
+    return obj
+
+
+def _response(code: int, body: Any):
+    safe = _decimal_to_native(body)
+    return {"statusCode": code, "body": json.dumps(safe)}
+
+
+# --------------------------------------------------------
+# REQUEST UPLOAD — start upload & return presigned PUT URL
+# --------------------------------------------------------
 def request_upload(event, context=None):
-    body = event.get("body")
-    if isinstance(body, str):
-        body = json.loads(body)
-    req = CreateUploadRequest(**body)
+    try:
+        body = event.get("body") or "{}"
+        payload = json.loads(body) if isinstance(body, str) else body
+        req = CreateUploadRequest(**payload)
+    except Exception as e:
+        logger.exception("request_upload invalid payload")
+        return _response(400, {"error": "invalid payload", "detail": str(e)})
+
     if req.size > MAX_UPLOAD_SIZE:
         return _response(413, {"error": "file too large"})
+
     image_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    placeholder = {
+
+    metadata_item = {
         "image_id": image_id,
         "user_id": req.user_id,
         "filename": req.filename,
         "content_type": req.content_type,
         "size": req.size,
         "tags": req.tags or [],
-        "status": "pending",
         "created_at": now,
     }
-    create_metadata(placeholder)
-    upload_url = generate_presigned_put(image_id, req.content_type)
-    logger.info(json.dumps({"event": "request_upload", "image_id": image_id, "user_id": req.user_id}))
-    return _response(201, {"image_id": image_id, "upload_url": upload_url, "expires_in": int(os.environ.get("PRESIGNED_PUT_EXPIRES", 300))})
 
+    try:
+        create_metadata(metadata_item)
+    except Exception as e:
+        logger.exception("Failed to create metadata")
+        return _response(500, {"error": "ddb write error", "detail": str(e)})
+
+    try:
+        url = generate_presigned_put(image_id, req.content_type)
+    except Exception as e:
+        logger.exception("presigned put generation failed")
+        return _response(500, {"error": "s3 presign error", "detail": str(e)})
+
+    # Use 201 Created for new resource
+    return _response(201, {"image_id": image_id, "upload_url": url, "expires_in": 300})
+
+
+# --------------------------------------------------------
+# COMPLETE UPLOAD — verify S3 object exists, return metadata
+# --------------------------------------------------------
 def complete_upload(event, context=None):
-    path_params = event.get("pathParameters") or {}
-    image_id = path_params.get("image_id")
+    image_id = (event.get("pathParameters") or {}).get("image_id")
     if not image_id:
         return _response(400, {"error": "missing image_id"})
-    obj = head_object(image_id)
-    if not obj:
-        return _response(404, {"error": "object not found in S3"})
-    s3_size = obj.get("ContentLength")
-    table.update_item(
-        Key={"image_id": image_id},
-        UpdateExpression="SET #s=:s, size=:size, s3_etag=:etag",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":s": "complete", ":size": s3_size, ":etag": obj.get("ETag")},
-    )
-    logger.info(json.dumps({"event": "complete_upload", "image_id": image_id, "size": s3_size}))
-    return _response(200, {"image_id": image_id, "size": s3_size})
 
-def get_image(event, context=None):
-    image_id = event.get("pathParameters", {}).get("image_id")
-    if not image_id:
-        return _response(400, {"error": "missing image_id"})
     item = get_item(image_id)
-    if not item or item.get("status") != "complete":
-        return _response(404, {"error": "not found or incomplete"})
-    s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"), endpoint_url=os.environ.get("AWS_ENDPOINT_URL"))
-    key = f"images/{image_id}"
-    url = s3.generate_presigned_url("get_object", Params={"Bucket": S3_BUCKET, "Key": key}, ExpiresIn=int(os.environ.get("PRESIGNED_GET_EXPIRES", 300)))
+    if not item:
+        return _response(404, {"error": "not found"})
+
+    if not head_object(image_id):
+        return _response(404, {"error": "object missing in s3"})
+
+    url = generate_presigned_get(image_id)
     item["url"] = url
     return _response(200, item)
 
-def list_images_handler(event, context=None):
-    qs = event.get("queryStringParameters") or {}
-    user_id = qs.get("user_id")
-    tag = qs.get("tag")
-    try:
-        resp = table.scan()
-        items = resp.get("Items", [])
-    except Exception:
-        items = []
-    if user_id:
-        items = [it for it in items if it.get("user_id") == user_id]
-    if tag:
-        items = [it for it in items if tag in (it.get("tags") or [])]
-    return _response(200, {"items": items})
 
-def delete_image_handler(event, context=None):
-    image_id = event.get("pathParameters", {}).get("image_id")
+# --------------------------------------------------------
+# VIEW IMAGE (metadata or ?download=true → presigned URL)
+# --------------------------------------------------------
+def get_image(event, context=None):
+    image_id = (event.get("pathParameters") or {}).get("image_id")
     if not image_id:
         return _response(400, {"error": "missing image_id"})
-    delete_object(image_id)
-    table.delete_item(Key={"image_id": image_id})
-    logger.info(json.dumps({"event": "delete_image", "image_id": image_id}))
+
+    item = get_item(image_id)
+    if not item:
+        return _response(404, {"error": "not found"})
+
+    qs = event.get("queryStringParameters") or {}
+    download = qs.get("download")
+    if download in ("1", "true", "True"):
+        url = generate_presigned_get(image_id)
+        if not url:
+            return _response(404, {"error": "object missing in s3"})
+        item["url"] = url
+
+    return _response(200, item)
+
+
+# --------------------------------------------------------
+# LIST IMAGES (supports user_id, content_type, tag)
+# --------------------------------------------------------
+def list_images_handler(event, context=None):
+    qs = event.get("queryStringParameters") or {}
+
+    user_id = qs.get("user_id")
+    content_type = qs.get("content_type")
+    tag = qs.get("tag")
+
+    logger.info("list_images_handler called with qs=%s", qs)
+
+    try:
+        items = scan_items()
+    except Exception as e:
+        logger.exception("scan_items failed")
+        return _response(500, {"error": "scan_items failed", "detail": str(e)})
+
+    try:
+        if user_id:
+            items = [i for i in items if i.get("user_id") == user_id]
+
+        if content_type:
+            items = [i for i in items if i.get("content_type") == content_type]
+
+        if tag:
+            items = [i for i in items if tag in (i.get("tags") or [])]
+    except Exception as e:
+        logger.exception("filtering failed")
+        return _response(500, {"error": "filtering failed", "detail": str(e)})
+
+    return _response(200, {"items": items})
+
+
+# --------------------------------------------------------
+# DELETE IMAGE — remove S3 object + DynamoDB item
+# --------------------------------------------------------
+def delete_image_handler(event, context=None):
+    image_id = (event.get("pathParameters") or {}).get("image_id")
+
+    if not image_id:
+        return _response(400, {"error": "missing image_id"})
+
+    try:
+        delete_object(image_id)
+    except Exception:
+        logger.exception("s3 delete failed")
+
+    try:
+        from .storage import table
+        table.delete_item(Key={"image_id": image_id})
+    except Exception as e:
+        logger.exception("ddb delete failed")
+        return _response(500, {"error": "ddb delete failed", "detail": str(e)})
+
     return _response(200, {"deleted": image_id})

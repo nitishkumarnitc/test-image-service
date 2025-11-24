@@ -1,0 +1,262 @@
+{
+  "info": {
+    "name": "MontyCloud Image Service (with examples)",
+    "description": "Postman collection for MontyCloud Image Service (Localstack adapter). Set environment variable baseUrl (default: http://localhost:8080). Examples included for each request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Create upload (request presigned PUT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"nitish\",\n  \"filename\": \"photo.jpg\",\n  \"content_type\": \"image/jpeg\",\n  \"size\": 12345,\n  \"tags\": [\"profile\",\"avatar\"]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/images",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images"]
+        }
+      },
+      "response": [
+        {
+          "name": "201 Created - example (unwrapped)",
+          "originalRequest": {},
+          "status": "Created",
+          "code": 201,
+          "body": "{\n  \"image_id\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\",\n  \"upload_url\": \"http://localhost:4566/montycloud-images/images/73ee8543-c7f2-4b2c-914a-45a0b4e38326?AWSAccessKeyId=test&Signature=...&Expires=1763640430\",\n  \"expires_in\": 300\n}",
+          "header": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        },
+        {
+          "name": "201 Created - envelope style (older handler)",
+          "originalRequest": {},
+          "status": "Created",
+          "code": 201,
+          "body": "{\n  \"statusCode\": 201,\n  \"body\": \"{\\\"image_id\\\": \\\"73ee8543-c7f2-4b2c-914a-45a0b4e38326\\\", \\\"upload_url\\\": \\\"http://localhost:4566/....\\\", \\\"expires_in\\\": 300}\"\n}",
+          "header": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Upload file to presigned PUT (example)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "image/jpeg" }
+        ],
+        "body": { "mode": "file", "file": { "src": "" } },
+        "url": { "raw": "{{upload_url}}", "host": ["{{upload_url}}"], "path": [] },
+        "description": "Use after Create upload. Set `upload_url` environment variable to returned `upload_url`. Choose a local file in Postman body."
+      },
+      "response": [
+        {
+          "name": "200 OK - S3 accepts PUT",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "",
+          "header": [
+            { "key": "Content-Type", "value": "application/octet-stream" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Complete upload (verify S3 object exists)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/images/{{image_id}}/complete",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images", "{{image_id}}", "complete"]
+        },
+        "description": "Verifies the uploaded S3 object exists and returns metadata + presigned GET URL."
+      },
+      "response": [
+        {
+          "name": "200 OK - example",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"image_id\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\",\n  \"user_id\": \"nitish\",\n  \"filename\": \"photo.jpg\",\n  \"content_type\": \"image/jpeg\",\n  \"size\": 12345,\n  \"tags\": [\"profile\",\"avatar\"],\n  \"created_at\": \"2025-11-20T12:00:49.907641+00:00\",\n  \"url\": \"http://localhost:4566/montycloud-images/images/73ee8543-c7f2-...?...\"\n}",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        },
+        {
+          "name": "404 Object missing - example",
+          "originalRequest": {},
+          "status": "Not Found",
+          "code": 404,
+          "body": "{ \"error\": \"object missing in s3\" }",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        }
+      ]
+    },
+
+    {
+      "name": "Get image metadata",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/images/{{image_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images", "{{image_id}}"]
+        },
+        "description": "Returns image metadata (no presigned URL)."
+      },
+      "response": [
+        {
+          "name": "200 OK - example metadata",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"image_id\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\",\n  \"user_id\": \"nitish\",\n  \"filename\": \"photo.jpg\",\n  \"content_type\": \"image/jpeg\",\n  \"size\": 12345,\n  \"tags\": [\"profile\",\"avatar\"],\n  \"created_at\": \"2025-11-20T12:00:49.907641+00:00\"\n}",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        },
+        {
+          "name": "404 Not Found - example",
+          "originalRequest": {},
+          "status": "Not Found",
+          "code": 404,
+          "body": "{ \"error\": \"not found\" }",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        }
+      ]
+    },
+
+    {
+      "name": "Get image metadata + download URL (download=true)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/images/{{image_id}}?download=true",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images", "{{image_id}}"],
+          "query": [{ "key": "download", "value": "true" }]
+        },
+        "description": "Returns metadata and `url` containing a presigned GET URL for direct download."
+      },
+      "response": [
+        {
+          "name": "200 OK - example with url",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"image_id\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\",\n  \"user_id\": \"nitish\",\n  \"filename\": \"photo.jpg\",\n  \"content_type\": \"image/jpeg\",\n  \"size\": 12345,\n  \"tags\": [\"profile\",\"avatar\"],\n  \"created_at\": \"2025-11-20T12:00:49.907641+00:00\",\n  \"url\": \"http://localhost:4566/montycloud-images/images/73ee8543-...?...\"\n}",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        }
+      ]
+    },
+
+    {
+      "name": "List images (all / filters)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/images?user_id=nitish",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images"],
+          "query": [{ "key": "user_id", "value": "nitish" }]
+        },
+        "description": "List images. Query params supported: user_id, content_type, tag"
+      },
+      "response": [
+        {
+          "name": "200 OK - example list",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "{\n  \"items\": [\n    {\n      \"image_id\": \"8b0ac98a-a002-4011-aad5-4b744f8b4201\",\n      \"user_id\": \"nitish\",\n      \"filename\": \"photo.jpg\",\n      \"content_type\": \"image/jpeg\",\n      \"size\": 12345,\n      \"tags\": [\"profile\",\"avatar\"],\n      \"created_at\": \"2025-11-20T12:00:49.907641+00:00\",\n      \"status\": \"pending\"\n    }\n  ]\n}",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        }
+      ]
+    },
+
+    {
+      "name": "Delete image",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/images/{{image_id}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "images", "{{image_id}}"]
+        },
+        "description": "Deletes the S3 object (best-effort) and the DynamoDB item."
+      },
+      "response": [
+        {
+          "name": "200 OK - delete result",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "{ \"deleted\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\" }",
+          "header": [{ "key": "Content-Type", "value": "application/json" }]
+        }
+      ]
+    },
+
+    {
+      "name": "Download file from presigned GET (example)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{download_url}}", "host": ["{{download_url}}"], "path": [] },
+        "description": "Use the `url` value returned by Complete upload or Get metadata with `download=true`. Set it to the `download_url` variable and run this request."
+      },
+      "response": [
+        {
+          "name": "200 OK - binary example",
+          "originalRequest": {},
+          "status": "OK",
+          "code": 200,
+          "body": "",
+          "header": [{ "key": "Content-Type", "value": "image/jpeg" }]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-extract useful variables",
+          "try {",
+          "  var body = pm.response.json ? pm.response.json() : null;",
+          "  if (body) {",
+          "    // If handler returns envelope {statusCode, body: \"...\"}, try to parse body",
+          "    if (body.statusCode && body.body) {",
+          "      try { body = typeof body.body === 'string' ? JSON.parse(body.body) : body.body; } catch(e) {}",
+          "    }",
+          "    if (body.image_id) pm.environment.set('image_id', body.image_id);",
+          "    if (body.upload_url) pm.environment.set('upload_url', body.upload_url);",
+          "    if (body.url) pm.environment.set('download_url', body.url);",
+          "  }",
+          "} catch(e) { /* ignore parsing errors */ }"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "image_id", "value": "" },
+    { "key": "upload_url", "value": "" },
+    { "key": "download_url", "value": "" }
+  ]
+}

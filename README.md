@@ -1,3 +1,71 @@
+# ✅ **README Section**
+
+````markdown
+## 🚀 Start the Full Stack
+
+Build all images and start the entire stack:
+
+```bash
+docker compose up -d --build
+````
+
+---
+
+## 🔁 Rebuild Only the Image Service
+
+If new code is not being picked up (because of Dockerfile `COPY`):
+
+```bash
+docker compose up -d --build
+docker compose build image-service
+docker compose up -d --no-deps image-service
+```
+
+If you're using volume mounts for development, restarting is enough:
+
+```bash
+docker compose restart image-service
+```
+
+---
+
+## 📜 View Logs
+
+### Show last 200 log lines:
+
+```bash
+docker compose logs --tail 200 image-service
+```
+
+### Follow live logs:
+
+```bash
+docker compose logs -f image-service
+```
+
+### Follow both services:
+
+```bash
+docker compose logs -f localstack image-service
+```
+
+---
+
+## 🩺 Debugging: Check DNS & LocalStack Reachability
+
+Run this inside the `image-service` container to confirm DNS resolution + LocalStack health:
+
+```bash
+docker compose exec image-service sh -c \
+"getent hosts localstack || true; \
+ curl -sS http://localstack:4566/health || true"
+```
+
+
+
+
+
+
 # Image Service 
 
  It includes:
