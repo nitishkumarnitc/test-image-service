@@ -5,6 +5,5 @@ moto>=4.0.0
 requests>=2.25.1
 python-dotenv>=0.20.0
 pydantic>=1.8.2
-
 fastapi>=0.78
 uvicorn>=0.17
