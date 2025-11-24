@@ -27,3 +27,19 @@ services:
       - localstack
     ports:
       - "8080:8080"
+
+  image-service-tests:
+    build: .
+    environment:
+      - RUN_TESTS=1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - S3_BUCKET=montycloud-images
+      - DDB_TABLE=Images
+      - WAIT_TIMEOUT_SEC=60
+    depends_on:
+      - localstack
+    # do not expose ports — this container runs tests then exits
+    # Optional: use same network so it can reach localstack

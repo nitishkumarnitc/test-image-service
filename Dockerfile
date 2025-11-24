@@ -1,29 +1,29 @@
-# Dockerfile (Python 3.10 slim, boto3-based resource init)
+# Dockerfile — single-stage image (contains tests so test service can run them)
 FROM python:3.10-slim
 
-# set working directory
 WORKDIR /app
 
-# Install minimal OS deps used by scripts (curl used by wait-for-localstack.sh)
+# OS deps useful for tests and runtime
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
+    apt-get install -y --no-install-recommends curl ca-certificates bash build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache when deps don't change
+# Install Python deps (include pytest, moto if you need)
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code + scripts
-# - put your FastAPI app (server.py or module) and src/ into the context
+# Copy source, server and tests so the image can run tests
 COPY src/ src/
 COPY server.py .
-# Ensure Python output is unbuffered (better logs)
-ENV PYTHONUNBUFFERED=1
+COPY tests/ tests/
 
-# Expose the port the app listens on
+# Copy helper scripts
+COPY entrypoint.sh /app/entrypoint.sh
+COPY wait-for-localstack.sh /app/wait-for-localstack.sh
+RUN chmod +x /app/entrypoint.sh /app/wait-for-localstack.sh
+
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 
-# CMD: run the app with uvicorn bound to 0.0.0.0 so host can connect
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
