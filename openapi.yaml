@@ -2,60 +2,333 @@ openapi: 3.0.3
 info:
   title: MontyCloud Image Service
   version: "1.0.0"
+  description: |
+    API to request presigned upload URLs, complete uploads (verify S3 object),
+    fetch metadata, list and delete images. This OpenAPI spec is aligned with
+    the provided Postman collection (examples included).
 servers:
+  - url: http://localhost:8080/v1
+    description: Local (matches Postman {{baseUrl}})
   - url: https://api.example.com/v1
+    description: Production example
+
 paths:
   /images:
     post:
       summary: Request presigned upload URL
+      operationId: createUpload
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [user_id, filename, content_type, size]
-              properties:
-                user_id: { type: string }
-                filename: { type: string }
-                content_type: { type: string }
-                size: { type: integer }
-                tags: { type: array, items: { type: string } }
+              $ref: "#/components/schemas/ImageCreateRequest"
+            example:
+              user_id: "nitish"
+              filename: "photo.jpg"
+              content_type: "image/jpeg"
+              size: 12345
+              tags: ["profile","avatar"]
       responses:
         "201":
-          description: presigned URL returned
+          description: Presigned URL returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageCreateResponse"
+              examples:
+                created:
+                  summary: 201 Created - example (unwrapped)
+                  value:
+                    image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+                    upload_url: "http://localhost:4566/montycloud-images/images/73ee8543-c7f2-4b2c-914a-45a0b4e38326?AWSAccessKeyId=test&Signature=...&Expires=1763640430"
+                    expires_in: 300
+                envelope_style:
+                  summary: 201 Created - envelope style (older handler)
+                  value:
+                    statusCode: 201
+                    body: "{\"image_id\": \"73ee8543-c7f2-4b2c-914a-45a0b4e38326\", \"upload_url\": \"http://localhost:4566/...\", \"expires_in\": 300}"
+    get:
+      summary: List images (all / filters)
+      operationId: listImages
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: Filter by owner user_id
+        - name: content_type
+          in: query
+          schema:
+            type: string
+          description: Filter by content type (e.g. image/jpeg)
+        - name: tag
+          in: query
+          schema:
+            type: string
+          description: Filter by tag
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            description: Cursor for pagination
+      responses:
+        "200":
+          description: List of images
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListImagesResponse"
+              examples:
+                sample:
+                  summary: 200 OK - example list
+                  value:
+                    items:
+                      - image_id: "8b0ac98a-a002-4011-aad5-4b744f8b4201"
+                        user_id: "nitish"
+                        filename: "photo.jpg"
+                        content_type: "image/jpeg"
+                        size: 12345
+                        tags: ["profile","avatar"]
+                        created_at: "2025-11-20T12:00:49.907641+00:00"
+                        status: "pending"
+
   /images/{image_id}/complete:
     post:
       summary: Confirm upload and persist metadata
+      operationId: completeUpload
       parameters:
         - name: image_id
           in: path
           required: true
-          schema: { type: string }
+          schema:
+            type: string
       responses:
         "200":
-          description: Metadata persisted
-  /images:
-    get:
-      summary: List images (filters)
-      parameters:
-        - in: query
-          name: user_id
-          schema: { type: string }
-        - in: query
-          name: tag
-          schema: { type: string }
-        - in: query
-          name: limit
-          schema: { type: integer, default: 20 }
-        - in: query
-          name: cursor
-          schema: { type: string }
-      responses:
-        "200":
-          description: list
+          description: Metadata persisted and presigned GET URL returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageMetadata"
+              examples:
+                ok:
+                  summary: 200 OK - example
+                  value:
+                    image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+                    user_id: "nitish"
+                    filename: "photo.jpg"
+                    content_type: "image/jpeg"
+                    size: 12345
+                    tags: ["profile","avatar"]
+                    created_at: "2025-11-20T12:00:49.907641+00:00"
+                    url: "http://localhost:4566/montycloud-images/images/73ee8543-c7f2-...?... "
+        "404":
+          description: object missing in S3
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "object missing in s3"
+
   /images/{image_id}:
     get:
-      summary: Get image metadata and presigned GET URL
+      summary: Get image metadata (optionally return presigned GET URL)
+      operationId: getImage
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: download
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: If true, include `url` containing a presigned GET URL
+      responses:
+        "200":
+          description: Image metadata (and url if download=true)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageMetadata"
+              examples:
+                metadata:
+                  summary: 200 OK - example metadata
+                  value:
+                    image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+                    user_id: "nitish"
+                    filename: "photo.jpg"
+                    content_type: "image/jpeg"
+                    size: 12345
+                    tags: ["profile","avatar"]
+                    created_at: "2025-11-20T12:00:49.907641+00:00"
+                metadata_with_url:
+                  summary: 200 OK - example with url
+                  value:
+                    image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+                    user_id: "nitish"
+                    filename: "photo.jpg"
+                    content_type: "image/jpeg"
+                    size: 12345
+                    tags: ["profile","avatar"]
+                    created_at: "2025-11-20T12:00:49.907641+00:00"
+                    url: "http://localhost:4566/montycloud-images/images/73ee8543-...?... "
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "not found"
+
     delete:
-      summary: Delete image (soft/hard)
+      summary: "Delete image (best-effort: S3 object + DynamoDB item)"
+      operationId: deleteImage
+      parameters:
+        - name: image_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+              example:
+                deleted: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+
+components:
+  schemas:
+    ImageCreateRequest:
+      type: object
+      required:
+        - user_id
+        - filename
+        - content_type
+        - size
+      properties:
+        user_id:
+          type: string
+          description: ID of the uploading user
+        filename:
+          type: string
+        content_type:
+          type: string
+          description: MIME type (e.g. image/jpeg)
+        size:
+          type: integer
+          description: File size in bytes
+        tags:
+          type: array
+          items:
+            type: string
+      example:
+        user_id: "nitish"
+        filename: "photo.jpg"
+        content_type: "image/jpeg"
+        size: 12345
+        tags: ["profile","avatar"]
+
+    ImageCreateResponse:
+      type: object
+      properties:
+        image_id:
+          type: string
+          description: UUID assigned to image record
+        upload_url:
+          type: string
+          description: Presigned PUT URL to upload the file (S3)
+        expires_in:
+          type: integer
+          description: Seconds until the presigned PUT URL expires
+      example:
+        image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+        upload_url: "http://localhost:4566/montycloud-images/images/73ee8543-...?... "
+        expires_in: 300
+
+    ImageMetadata:
+      type: object
+      properties:
+        image_id: { type: string }
+        user_id: { type: string }
+        filename: { type: string }
+        content_type: { type: string }
+        size: { type: integer }
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        url:
+          type: string
+          description: Presigned GET URL (provided when requested, e.g. download=true)
+      example:
+        image_id: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+        user_id: "nitish"
+        filename: "photo.jpg"
+        content_type: "image/jpeg"
+        size: 12345
+        tags: ["profile","avatar"]
+        created_at: "2025-11-20T12:00:49.907641+00:00"
+        url: "http://localhost:4566/montycloud-images/images/73ee8543-...?... "
+
+    ListImagesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageMetadata"
+      example:
+        items:
+          - image_id: "8b0ac98a-a002-4011-aad5-4b744f8b4201"
+            user_id: "nitish"
+            filename: "photo.jpg"
+            content_type: "image/jpeg"
+            size: 12345
+            tags: ["profile","avatar"]
+            created_at: "2025-11-20T12:00:49.907641+00:00"
+            status: "pending"
+
+    DeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: string
+          description: id of deleted image
+      example:
+        deleted: "73ee8543-c7f2-4b2c-914a-45a0b4e38326"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      example:
+        error: "not found"
+
+  parameters:
+    imageIdPath:
+      name: image_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+tags:
+  - name: images
+    description: Operations on images (upload, complete, metadata, list, delete)
